@@ -83,10 +83,19 @@ var analyzeCmd = &cobra.Command{
 				log.Fatalf("rendering analysis: %v", err)
 			}
 		case "json":
-			var vulns = []PriorityCount{}
+			var vulnsMap = make(map[string]v1.Vulnerability)
 			for _, layer := range analysis.Layers {
-				vulns = append(vulns, CountVulnerabilities(layer)...)
+				for _, f := range layer.Layer.Features {
+					for _, vuln := range f.Vulnerabilities {
+						vulnsMap[vuln.Name] = vuln
+					}
+				}
 			}
+			var rawVulns = make([]v1.Vulnerability, 0, len(vulnsMap))
+			for _, value := range vulnsMap {
+				rawVulns = append(rawVulns, value)
+			}
+			var vulns = CountRawVulnerabilities(rawVulns)
 			var info = AnalyseInfo{Image: analysis.ImageName, Vulns: vulns}
 			b, _ := json.MarshalIndent(info, "", "    ")
 			fmt.Println(string(b))
@@ -146,8 +155,8 @@ func getPrioritiesFromArgs() []types.Priority {
 	}
 	return f
 }
-func CountVulnerabilities(l v1.LayerEnvelope) []PriorityCount {
 
+func CountRawVulnerabilities(vulns []v1.Vulnerability) []PriorityCount {
 	filtersS := getPrioritiesFromArgs()
 
 	if len(filtersS) == 0 {
@@ -158,11 +167,9 @@ func CountVulnerabilities(l v1.LayerEnvelope) []PriorityCount {
 		r[v] = 0
 	}
 
-	for _, f := range l.Layer.Features {
-		for _, v := range f.Vulnerabilities {
-			if _, ok := r[types.Priority(v.Severity)]; ok {
-				r[types.Priority(v.Severity)]++
-			}
+	for _, v := range vulns {
+		if _, ok := r[types.Priority(v.Severity)]; ok {
+			r[types.Priority(v.Severity)]++
 		}
 	}
 
@@ -174,6 +181,14 @@ func CountVulnerabilities(l v1.LayerEnvelope) []PriorityCount {
 	}
 
 	return result
+}
+
+func CountVulnerabilities(l v1.LayerEnvelope) []PriorityCount {
+	var vulns = []v1.Vulnerability{}
+	for _, f := range l.Layer.Features {
+		vulns = append(vulns, f.Vulnerabilities...)
+	}
+	return CountRawVulnerabilities(vulns)
 }
 
 func init() {
